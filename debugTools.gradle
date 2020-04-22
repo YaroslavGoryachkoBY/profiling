@@ -1,0 +1,72 @@
+def TEST_START_TIME_ITERATIONS = 10
+def testStartAppTimeCommand = { ->
+    def devicesStdOut = new ByteArrayOutputStream()
+    exec {
+        def startAppTimeCommand = ['adb', 'devices', '-l']
+        commandLine startAppTimeCommand
+        standardOutput = devicesStdOut
+    }
+
+    BufferedReader bufReader = new BufferedReader(new StringReader(devicesStdOut.toString()))
+    List<String> connectedDevices = new ArrayList<>()
+    String line = null
+    int ln = 0
+    while ((line = bufReader.readLine()) != null) {
+        println(line)
+        if (ln > 0) {
+            String device = line.split(' ')[0]
+            if (device != null && device.length() > 0) {
+                connectedDevices.add(device)
+            }
+        }
+        ln++
+    }
+    StringBuilder stb = new StringBuilder()
+    for (String device : connectedDevices) {
+        println("Device: " + device)
+        stb.append("NEW DEVICE: ").append(device).append('\n')
+        for (int i = 0; i < TEST_START_TIME_ITERATIONS; i++) {
+            def testStdOut = new ByteArrayOutputStream()
+            println("StartAppTime iteration " + i + " from " + TEST_START_TIME_ITERATIONS)
+            exec {
+                def startAppTimeCommand = ['adb', '-s', device, 'shell', 'am', 'start', '-S', '-W', 'com.viber.voip/.WelcomeActivity', '-c', 'android.intent.category.LAUNCHER', '-a', 'android.intent.action.MAIN']
+                commandLine startAppTimeCommand
+                standardOutput = testStdOut
+            }
+            stb.append(testStdOut.toString()).append('\n')
+        }
+    }
+    return stb.toString().trim()
+}
+
+// measure app start time
+task measureAppStartTime {
+    doLast {
+        def result = testStartAppTimeCommand()
+        StringBuilder stb = new StringBuilder()
+        stb.append("Start time: ")
+        BufferedReader bufReader = new BufferedReader(new StringReader(result))
+        Integer totalTime = 0
+        String line = null
+        while ((line = bufReader.readLine()) != null) {
+            if (line.startsWith("NEW DEVICE:")) {
+                if (totalTime > 0) {
+                    println(stb.toString())
+                    println("Total time: " + totalTime)
+                    println("Average time: " + totalTime / TEST_START_TIME_ITERATIONS)
+                    totalTime = 0
+                    stb.setLength(0)
+                }
+                println(line)
+
+            } else if (line.startsWith("TotalTime:")) {
+                String time = line.replace("TotalTime:", "").trim()
+                totalTime += Integer.valueOf(time)
+                stb.append(line.replace("TotalTime:", "")).append("; ")
+            }
+        }
+        println(stb.toString())
+        println("Total time: " + totalTime)
+        println("Average time: " + totalTime / TEST_START_TIME_ITERATIONS)
+    }
+}
